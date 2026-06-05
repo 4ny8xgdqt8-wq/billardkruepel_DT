@@ -16,7 +16,6 @@
         window.playerAvatars = {
             "Daniel": "avatars/Daniel.webp",
             "Thorsten": "avatars/Thorsten.webp",
-            "Peter": "avatars/Peter.webp",
         };
         // Hilfsfunktion zur Auflösung des Bildpfads
         window.getAvatarUrl = (name) => {
@@ -1886,7 +1885,7 @@
         window.doDeleteMatch = async () => {
             if (window.matchToDeleteIndex === -1) return; // Sollte nicht passieren
             window.stats.splice(window.matchToDeleteIndex, 1);
-            await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "stats"), { matches: window.stats });
+            await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "stats_DT"), { matches: window.stats });
             window.closeDeleteConfirmModal();
             window.updateAllViews(); // UI aktualisieren nach dem Löschen
         };
@@ -2178,7 +2177,7 @@
         window.updateLoaderStatus("Verbinde zur Cloud", 15);
         signInAnonymously(auth).then(() => {
             window.updateLoaderStatus("Synchronisiere Daten", 40);
-            onSnapshot(doc(db, "billard_data", "stats"), (snap) => {
+            onSnapshot(doc(db, "billard_data", "stats_DT"), (snap) => {
                 window.stats = snap.exists() ? (snap.data().matches || []) : [];
                 window.flags.stats = true;
                 if (typeof window.recalculateAndRender === 'function') window.recalculateAndRender();
@@ -2199,7 +2198,7 @@
                 checkAllReadyAndHideLoader();
             }, (err) => console.error("Firebase Spieler Fehler:", err));
             
-            onSnapshot(doc(db, "billard_data", "daily_achivs"), (snap) => { 
+            onSnapshot(doc(db, "billard_data", "daily_achivs_DT"), (snap) => { 
                 if (snap.exists()) {
                     window.dailyAchivs = snap.data();
                     if (typeof window.recalculateAndRender === 'function') window.recalculateAndRender();
@@ -2532,7 +2531,7 @@
 
                 // 1. Match in der Cloud speichern (Priorität)
                 window.stats = updatedStats; 
-                await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "stats"), { matches: updatedStats });
+                await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "stats_DT"), { matches: updatedStats });
 
                 // 2. Tageserfolge berechnen und mergen (Robust)
                 try {
@@ -2554,7 +2553,7 @@
                     if (Object.keys(finalDayResults).length > 0) {
                         const newDaily = { days: {}, ...window.dailyAchivs }; // Sicherstellen, dass 'days' existiert
                         newDaily.days[isoDay] = finalDayResults;
-                        await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "daily_achivs"), newDaily);
+                        await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "daily_achivs_DT"), newDaily);
                     }
                 } catch (achErr) {
                     console.warn("Erfolge konnten nicht aktualisiert werden, Match wurde aber gespeichert:", achErr);

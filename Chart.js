@@ -2778,7 +2778,7 @@ window.syncDailyAchievementsWithHistory = async function(bypassConfirm = false) 
     }
     
     try {
-        await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "daily_achivs"), { days: newDailyDays });
+        await window.dbFns.setDoc(window.dbFns.doc(window.db, "billard_data", "daily_achivs_DT"), { days: newDailyDays });
         window.openSuccessModal();
         if (window.recalculateAndRender) window.recalculateAndRender();
     } catch (err) {
