@@ -946,6 +946,13 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
     const byId = (id) => (root && root.querySelector) ? root.querySelector('#' + id) : document.getElementById(id);    
     if (!root || typeof root.querySelector !== 'function') root = document;
 
+    // --- AUTO-INITIALISIERUNG DER GLOBALEN DATEN ---
+    // Falls index.html die Daten übergibt, sie aber nicht global speichert,
+    // holen wir das hier nach, damit sync-Funktionen nicht blockieren.
+    if (stats && stats.length > 0 && (!window.stats || window.stats.length === 0)) window.stats = stats;
+    if (precalculatedCareerStats && !window.careerStats) window.careerStats = precalculatedCareerStats;
+    if (!window.generatedKillerAchs && typeof window.generateDynamicAchievements === 'function') window.generateDynamicAchievements();
+
     // --- DAILY ACHIVS LADEN (falls nicht bereits vorhanden) ---
     if (!window.dailyAchivs) {
       window.dailyAchivs = { days: {} };
@@ -2653,8 +2660,18 @@ window.generateDynamicAchievements = () => {
 };
 
 window.syncDailyAchievementsWithHistory = async function(bypassConfirm = false) {
-    if (!window.stats || !window.spieler || !window.dailyFamePool || !window.dailyShamePool) {
-        window.openErrorModal("Daten noch nicht geladen. Bitte kurz warten.");
+    // Robustere Prüfung: Falls window.spieler nicht gesetzt ist, versuchen wir es über die globale Variable
+    const activeSpieler = window.spieler || (typeof spieler !== 'undefined' ? spieler : null);
+    const activeStats = window.stats || [];
+
+    if (!activeStats.length || !activeSpieler || !window.dailyFamePool || !window.dailyShamePool) {
+        console.error("Sync-Abbruch: Fehlende Abhängigkeiten", { 
+            stats: !!activeStats.length, 
+            spieler: !!activeSpieler, 
+            fame: !!window.dailyFamePool, 
+            shame: !!window.dailyShamePool 
+        });
+        if (window.openErrorModal) window.openErrorModal("Daten oder App-Logik noch nicht vollständig geladen. Bitte einen Moment warten oder Seite neu laden.");
         return;
     }
     
