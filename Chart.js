@@ -946,13 +946,6 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
     const byId = (id) => (root && root.querySelector) ? root.querySelector('#' + id) : document.getElementById(id);    
     if (!root || typeof root.querySelector !== 'function') root = document;
 
-    // --- AUTO-INITIALISIERUNG DER GLOBALEN DATEN ---
-    // Falls index.html die Daten übergibt, sie aber nicht global speichert,
-    // holen wir das hier nach, damit sync-Funktionen nicht blockieren.
-    if (stats && stats.length > 0 && (!window.stats || window.stats.length === 0)) window.stats = stats;
-    if (precalculatedCareerStats && !window.careerStats) window.careerStats = precalculatedCareerStats;
-    if (!window.generatedKillerAchs && typeof window.generateDynamicAchievements === 'function') window.generateDynamicAchievements();
-
     // --- DAILY ACHIVS LADEN (falls nicht bereits vorhanden) ---
     if (!window.dailyAchivs) {
       window.dailyAchivs = { days: {} };
@@ -1172,7 +1165,9 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
 
     // FIX: Für den Session-Tab nutzen wir die berechneten Daten, zeigen aber nur die heutigen Änderungen
     const dataToday = filterToday ? (function() {
-        const loc = window.calculateStatsLocally(statsToday, window.spieler, todayStr);
+        // WICHTIG: Wir übergeben ALLE safeStats, damit ELO korrekt berechnet wird, 
+        // markieren aber über todayStr, welche Spiele als "heute" gewertet werden.
+        const loc = window.calculateStatsLocally(safeStats, window.spieler, todayStr);
         return loc;
     })() : null;
 
@@ -2533,7 +2528,7 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
             const transferKey = `${winnerKey} -> ${loserKey}`;
             aggregates.eloTransfers[transferKey] = (aggregates.eloTransfers[transferKey] || 0) + avgMatchEloDelta;
         }
-        matchDeltas[originalIndex] = { eloDelta: totalEloTransferredForMatch }; // Use the actual sum of ELO changes for matchDelta
+        matchDeltas[originalIndex] = { eloDelta: avgMatchEloDelta }; // Konsistent mit Worker (ELO pro Spieler)
 
         // Duo & Duell Logic für Aggregates (Hier außerhalb des Spieler-Loops, damit nicht mehrfach gezählt wird!)
         if (isTeam && p1A.length === 2 && p2A.length === 2) {
@@ -2605,6 +2600,10 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
     return { pData, matchDeltas, aggregates, blackWins: blackWins, breakWins: breakWinsCount };
 };
 
+// --- GLOBALER ALIAS FÜR INDEX.HTML ---
+// Dies behebt den Fehler "App-Logik noch nicht geladen"
+window.processAllStatsChronologically = window.calculateStatsLocally;
+
 // UI-Update erzwingen, falls Chart.js nach den Firebase-Snapshots geladen wurde
 if (typeof window.recalculateAndRender === 'function') window.recalculateAndRender();
 else if (typeof window.updateAllViews === 'function') window.updateAllViews();
@@ -2660,18 +2659,12 @@ window.generateDynamicAchievements = () => {
 };
 
 window.syncDailyAchievementsWithHistory = async function(bypassConfirm = false) {
-    // Robustere Prüfung: Falls window.spieler nicht gesetzt ist, versuchen wir es über die globale Variable
-    const activeSpieler = window.spieler || (typeof spieler !== 'undefined' ? spieler : null);
+    // Robustere Prüfung der Abhängigkeiten
+    const activeSpieler = window.spieler || (typeof spieler !== 'undefined' ? spieler : []);
     const activeStats = window.stats || [];
 
-    if (!activeStats.length || !activeSpieler || !window.dailyFamePool || !window.dailyShamePool) {
-        console.error("Sync-Abbruch: Fehlende Abhängigkeiten", { 
-            stats: !!activeStats.length, 
-            spieler: !!activeSpieler, 
-            fame: !!window.dailyFamePool, 
-            shame: !!window.dailyShamePool 
-        });
-        if (window.openErrorModal) window.openErrorModal("Daten oder App-Logik noch nicht vollständig geladen. Bitte einen Moment warten oder Seite neu laden.");
+    if (!activeStats.length || activeSpieler.length === 0 || !window.dailyFamePool) {
+        if (window.openErrorModal) window.openErrorModal("Daten oder App-Logik noch nicht vollständig geladen. Bitte einen Moment warten.");
         return;
     }
     
