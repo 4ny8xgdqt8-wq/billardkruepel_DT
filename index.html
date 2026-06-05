@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Billardkrüppel</title>
+    <title>Billardkrüppel DT</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="icon" type="image/png" href="logo_html.png?v=2">
     <link rel="shortcut icon" type="image/png" href="logo_html.png?v=2">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Billard">
+    <meta name="apple-mobile-web-app-title" content="Billardkrüppel DT">
     <link rel="apple-touch-icon" href="logo_html.png?v=2">
 
     <!-- // Globale Avatar-Zuordnung (Spielername -> Pfad zum Bild) - Muss früh verfügbar sein -->
@@ -709,7 +709,7 @@
         <div class="loader-grid"></div>
         <div id="loader-content" style="display: flex; flex-direction: column; align-items: center; z-index: 2; transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1); width: 100%;">
         <img loading="lazy" src="logo.png" class="loader-logo" onerror="this.style.display='none'">
-        <div class="loader-title">Billardkrüppel</div>
+        <div class="loader-title">Billardkrüppel-DT</div>
         <div id="loader-avatars" class="loader-avatar-row"></div>
         <div class="loader-progress-container"><div id="loader-progress" class="loader-progress-bar"></div></div>
         <div id="loader-status" style="margin-top: 20px; font-weight: 900; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; animation: status-pulse 1.5s infinite ease-in-out;"></div>
@@ -725,7 +725,7 @@
             <div id="view-aufzeichnen" class="view active">
                 <div class="header-container">
                     <div class="header-side"><img loading="lazy" src="logo.png" class="logo-img" style="cursor:pointer; opacity: 0.7;" onclick="window.forceUpdate()" title="Update suchen" onerror="this.style.display='none'"></div>
-                    <div class="title-stack"><div class="main-title">Billardkrüppel</div><div class="sub-title" id="dynamic-greeting">Match erfassen</div></div>
+                    <div class="title-stack"><div class="main-title">Billardkrüppel-DT</div><div class="sub-title" id="dynamic-greeting">Match erfassen</div></div>
                     <div class="header-side right"><img loading="lazy" src="logo.png" class="logo-img" style="cursor:pointer; opacity: 0.6;" onclick="window.forceUpdate()" title="Update suchen" onerror="this.style.display='none'"></div>
                 </div>
                 <div class="card cinematic-entry" style="animation-delay: 0.1s;">
@@ -2152,7 +2152,7 @@
         // Alle hinterlegten Avatare im Loader anzeigen
         const loaderAvatars = document.getElementById('loader-avatars');
         if (loaderAvatars) {
-            const playersToShow = ["Daniel", "Thorsten", "Peter"]; 
+            const playersToShow = ["Daniel", "Thorsten"]; 
             loaderAvatars.innerHTML = playersToShow.map((p, i) => {
                 const src = (window.getAvatarUrl && typeof window.getAvatarUrl === 'function') ? window.getAvatarUrl(p) : `avatars/${p}.png`;
                 return `
@@ -2188,7 +2188,7 @@
                 checkAllReadyAndHideLoader();
             });
 
-            onSnapshot(doc(db, "billard_data", "spieler"), (snap) => {
+            onSnapshot(doc(db, "billard_data", "spieler_DT"), (snap) => {
                 window.spieler = snap.exists() ? (snap.data().names || []) : [];
                 window.flags.spieler = true;
                 window.updateLoaderStatus("Spieler geladen", 60);
@@ -2206,7 +2206,7 @@
             });
         }).catch(err => {
             console.error("Firebase Login Fehler:", err);
-            tryHideLoader(); // Auch bei Login-Fehler den Loader verstecken
+            window.hideLoader(); // Auch bei Login-Fehler den Loader verstecken
         });
 
         window.initDropdowns = () => {
