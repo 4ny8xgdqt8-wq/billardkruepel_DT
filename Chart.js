@@ -2659,12 +2659,19 @@ window.generateDynamicAchievements = () => {
 };
 
 window.syncDailyAchievementsWithHistory = async function(bypassConfirm = false) {
-    // Robustere Prüfung der Abhängigkeiten
-    const activeSpieler = window.spieler || (typeof spieler !== 'undefined' ? spieler : []);
+    // Prüfung der App-Logik (Pools)
+    if (!window.dailyFamePool || !window.dailyShamePool || !window.processData) {
+        if (window.openErrorModal) window.openErrorModal("App-Logik (Pools) noch nicht vollständig geladen. Bitte Seite neu laden.");
+        return;
+    }
+
+    // Prüfung der Daten (Spieler & Matches)
+    const activeSpieler = window.spieler || [];
     const activeStats = window.stats || [];
 
-    if (!activeStats.length || activeSpieler.length === 0 || !window.dailyFamePool) {
-        if (window.openErrorModal) window.openErrorModal("Daten oder App-Logik noch nicht vollständig geladen. Bitte einen Moment warten.");
+    if (activeSpieler.length === 0 || activeStats.length === 0) {
+        console.warn("Sync abgebrochen: Keine Daten vorhanden", { spieler: activeSpieler.length, stats: activeStats.length });
+        if (window.openErrorModal) window.openErrorModal("Synchronisierung nicht möglich: Keine Spieler oder Matches in der Datenbank gefunden.");
         return;
     }
     
