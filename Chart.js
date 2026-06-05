@@ -954,7 +954,6 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
     const allSafeStats = (window.stats || []).filter(m => m && m.d);
     const isFiltered = !filterToday && stats && stats.length !== allSafeStats.length;
 
-    // --- Spieler aus spieler.json (kommt aus BillardPro.js: const spieler = [...]) ---
     const configuredPlayers = (() => {
       let names = [];
       try {
@@ -1161,13 +1160,16 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
     // --- DATEN FILTERN ---
     const statsBeforeToday = safeStats.filter(g => g && g.d && !g.d.startsWith(todayStr));
     
-    const dataAll = precalculatedCareerStats || { pData: {}, matchDeltas: {}, aggregates: {} }; // Worker output
-    if (!precalculatedCareerStats && !filterToday) return; // Nicht rendern wenn Daten fehlen und nicht im Heute-Tab
-
+    const dataAll = precalculatedCareerStats || window.careerStats || { pData: {}, matchDeltas: {}, aggregates: {} }; // Worker output
     const dataBeforeToday = precalculatedCareerStatsBeforeToday || { pData: {}, matchDeltas: {}, aggregates: {} }; // Worker output
-    // FIX: Nutze calculateStatsLocally für gefilterte Ansichten
-    const dataToday = filterToday ? window.calculateStatsLocally(statsToday, window.spieler, todayStr) : null;
-    const dataFiltered = isFiltered ? window.calculateStatsLocally(stats, window.spieler) : null; // Nutze calculateStatsLocally für gefilterte ELO
+
+    // FIX: Für den Session-Tab nutzen wir die berechneten Daten, zeigen aber nur die heutigen Änderungen
+    const dataToday = filterToday ? (function() {
+        const loc = window.calculateStatsLocally(statsToday, window.spieler, todayStr);
+        return loc;
+    })() : null;
+
+    const dataFiltered = isFiltered ? window.calculateStatsLocally(stats, window.spieler) : null;
     const res = filterToday ? dataToday : (isFiltered ? dataFiltered : dataAll);
     const currentStats = filterToday ? statsToday : stats;
     // Labels auf aktive Spieler filtern und sortieren
@@ -1175,18 +1177,20 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
         .filter(p => configuredPlayers ? configuredPlayers.has(String(p).trim()) : true)
         .sort();
 
-    const getAchHtml = (proc, isTodayTab, procBefore) => {
+    const getAchHtml = (proc, isTodayTab, procBefore, dataAll) => {
       let achHtml = "";
 
       if (isTodayTab && proc.pData && Object.keys(proc.pData).some(p => proc.pData[p].todayGames > 0)) {
         achHtml += `<div class="section-label" style="margin-top: 40px;">🕒 Session Erfolge</div>`;
       }
 
-      const labels = Object.keys(proc.pData).sort();
+      const labels = Object.keys(proc.pData)
+        .filter(p => configuredPlayers ? configuredPlayers.has(String(p).trim()) : true)
+        .sort();
 
       labels.forEach((p, idx) => {
         const d = proc.pData[p];
-        const dCareer = dataAll.pData[p] || d;
+        const dCareer = (dataAll && dataAll.pData && dataAll.pData[p]) ? dataAll.pData[p] : d;
         // Vergleichsdaten für "NEU" Badge (Fallback auf leere Stats, falls Spieler heute neu ist)
         const dBefore = (procBefore && procBefore.pData[p]) ? procBefore.pData[p] : { 
             wins: 0, games: 0, rest: 0, maxStreak: 0, currentStreak: 0, lastWin: false, 
@@ -1194,7 +1198,7 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
         };
         
         const meta = getDailyMetaForPlayer(p);
-        const dLvl = d; // Level und Wins sollen sich immer nach den aktuell gefilterten Daten richten
+        const dLvl = isTodayTab ? dCareer : d; // Level/Rang immer auf Basis der Gesamt-Karriere zeigen
         dLvl.dailyDaysWithAch = meta.daysWithAch;
 
         if (isTodayTab && (!d.todayGames || d.todayGames === 0)) return;
@@ -1238,26 +1242,6 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
             currentLvlIndex = i + 1;
             nextLvl = levelSystem[i + 1] || null;
           }
-        }
-
-        // --- NUTZNIESSER BERECHNUNG ---
-        const nutzVals = labels.map(p => {
-            const d = res.pData[p];
-            const count = filterToday ? (d.todayBlackWinsCount || 0) : (d.blackWinsCount || 0);
-            return { p, count, ga: d.games || 0 };
-        });
-        
-        const maxNutz = nutzVals.length > 0 ? Math.max(...nutzVals.map(x => x.count)) : 0;
-        if (maxNutz > 0) {
-            const topNutz = nutzVals
-                .filter(x => x.count === maxNutz)
-                .sort((a, b) => (b.ga - a.ga) || a.p.localeCompare(b.p, 'de'));
-            
-            if (byId('stat-nutzniesser')) {
-                byId('stat-nutzniesser').innerText = topNutz.map(x => x.p).join(' / ') + ` (${maxNutz}x)`;
-            }
-        } else {
-            if (byId('stat-nutzniesser')) byId('stat-nutzniesser').innerText = "-";
         }
 
         // --- DYNAMISCHE LEVEL-INFOS ---
@@ -1354,20 +1338,20 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
             window.dailyShamePool.forEach(it => { if (it.cond(d)) currentAchs.push({ ...it, k: "shame", isNew: false }); });
 
             // Langzeit-Erfolge, die HEUTE neu dazugekommen sind (Vergleich mit dBefore)
-            if (dBefore) {
-                window.famePool.forEach(it => { if (it.cond(d) && !it.cond(dBefore)) currentAchs.push({ ...it, k: "fame", isNew: true }); });
-                window.shamePool.forEach(it => { if (it.cond(d) && !it.cond(dBefore)) currentAchs.push({ ...it, k: "shame", isNew: true }); });
+            if (dBefore && dCareer) {
+                window.famePool.forEach(it => { if (it.cond(dCareer) && !it.cond(dBefore)) currentAchs.push({ ...it, k: "fame", isNew: true }); });
+                window.shamePool.forEach(it => { if (it.cond(dCareer) && !it.cond(dBefore)) currentAchs.push({ ...it, k: "shame", isNew: true }); });
             }
         } else {
             // "Alle" Tab: Aktive Langzeit-Erfolge
             window.famePool.forEach(it => {
-                if (it.cond(d)) { // Achievements sollen sich nach den gefilterten Daten richten
+                if (it.cond(dCareer)) { // Achievements auf Basis der Karriere-Daten prüfen
                     const isNew = dBefore ? !it.cond(dBefore) : false;
                     currentAchs.push({ ...it, k: "fame", isNew });
                 }
             });
             window.shamePool.forEach(it => {
-                if (it.cond(d)) { // Achievements sollen sich nach den gefilterten Daten richten
+                if (it.cond(dCareer)) { // Achievements auf Basis der Karriere-Daten prüfen
                     const isNew = dBefore ? !it.cond(dBefore) : false;
                     currentAchs.push({ ...it, k: "shame", isNew });
                 }
@@ -1555,12 +1539,12 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
 
     if (filterToday) {
         if (aEl) aEl.style.display = "none";
-        if (sEl) { sEl.innerHTML = getAchHtml(res, true, dataBeforeToday); sEl.style.display = "block"; }
+        if (sEl) { sEl.innerHTML = getAchHtml(res, true, dataBeforeToday, dataAll); sEl.style.display = "block"; }
     } else { // Overall or Achievements tab
         if (tEl) tEl.style.display = "none";
         if (sEl) sEl.style.display = "none";
         if (aEl) { 
-            aEl.innerHTML = getAchHtml(res, false, dataBeforeToday); 
+            aEl.innerHTML = getAchHtml(res, false, dataBeforeToday, dataAll); 
             aEl.style.display = "block"; 
         }
     }
@@ -1718,7 +1702,8 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
         // 10. Session-Rekord (Höchster ELO-Gewinn an einem Tag)
         let sessionRecStr = "-";
         if (filterToday) {
-            const dayGains = res.aggregates?.sessionEloGains?.[todayStr.split('.').reverse().join('-')] || {};
+            const isoKey = todayStr.split('.').map(p => p.padStart(2, '0')).reverse().join('-');
+            const dayGains = res.aggregates?.sessionEloGains?.[isoKey] || {};
             const topToday = Object.entries(dayGains).sort((a,b) => b[1] - a[1]);
             if (topToday.length > 0 && topToday[0][1] > 0) {
                 sessionRecStr = `${topToday[0][0]} (+${Math.round(topToday[0][1])})`;
@@ -1756,63 +1741,22 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
           if (byId('stat-mauer')) byId('stat-mauer').innerText = "-";
         }
 
-        // --- TEAM-AUSWERTUNG ---
-        const normTeamKey = (teamStr) => {
-          const parts = String(teamStr || "")
-            .split(" & ")
-            .map(s => s.trim())
-            .filter(Boolean)
-            .sort(); // A & B == B & A
-          return parts.length ? parts.join(" & ") : "";
-        };
-
-        // Render Partner-Power
-        const teamResults = agg.teamResults || {};
-        const duoRanking = Object.entries(teamResults)
-            .map(([name, s]) => ({ name, wr: Math.round((s.w / s.g) * 100), games: s.g, wins: s.w }))
-            .filter(t => t.games >= 3)
-            .sort((a, b) => b.wr - a.wr || b.games - a.games)
-            .slice(0, 3);
-
-        const duoEl = byId('stat-duo-ranking');
-        if (duoEl) {
-              duoEl.innerHTML = duoRanking.length > 0 ? duoRanking.map((t, idx) => { // Added idx for animation-delay
-                const pNames = t.name.split(' & ');
-                return `
-                <div class="card-modern" style="display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:10px; padding: 12px; border-radius:18px; animation: ach-card-enter 0.4s ease-out forwards; opacity: 0; animation-delay: ${1.2 + idx * 0.05}s;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <div style="display:flex; flex-direction:column; align-items:center; min-width:18px; margin-right:4px;">
-                            <span style="color:var(--accent); font-weight:900; font-size:14px;">${idx+1}</span>
-                        </div>
-                        <div style="display:flex; align-items:center; position:relative; width:45px; height:30px;">
-                            ${pNames.map((p, pIdx) => `<img src="${window.getAvatarUrl(p)}" style="position:absolute; left:${pIdx * 15}px; width:28px; height:30px; border-radius:8px; object-fit:cover; border:1px solid rgba(255,255,255,0.2); z-index:${2-pIdx}; transform: rotate(${pIdx === 0 ? '-5deg' : '5deg'}); box-shadow: 4px 0 10px rgba(0,0,0,0.3);">`).join('')}
-                        </div>
-                        <div style="margin-left:12px;">
-                            <div style="color:#fff; font-weight:900; font-size:13px; letter-spacing:0.3px;">${t.name}</div>
-                            <div style="font-size:8px; color:#8e8e93; font-weight:700; text-transform:uppercase; margin-top:2px;">Elite Duo Synergy</div>
-                        </div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div class="stat-value-badge green">${t.wr}%</div>
-                        <div style="font-size:8px; color:#8e8e93; font-weight:800; margin-top:4px;">${t.wins}W / ${t.games}G</div>
-                    </div>
-                </div>`;
-            }).join('') : '<div style="font-size:10px; color:#8e8e93; text-align:center; padding:5px;">Mindestens 3 Spiele als Team nötig</div>';
-        }
-
         // Render Kugel-Spezis
         let topVollarbeiter = { n: "-", wr: 0 };
         let topHalbeExperte = { n: "-", wr: 0 };
 
-        const ballSpez = agg.ballSpez || {};
+        const ballSpez = agg.ballSpez || {}; // { playerName: { Voll: {w:X, g:Y}, Halb: {w:A, g:B} } }
         Object.entries(ballSpez).forEach(([name, data]) => {
-            if (data.Voll.g >= 3) { // Schwelle auf 3 Spiele gesetzt
-                const wr = (data.Voll.w / data.Voll.g) * 100;
-                if (wr > topVollarbeiter.wr) topVollarbeiter = { n: name, wr };
+            const vollStats = data.Voll || { w: 0, g: 0 };
+            const halbStats = data.Halbe || { w: 0, g: 0 };
+
+            if (vollStats.g >= 1) { // Schwelle auf 1 Spiel gesetzt (für Debugging)
+                const wr = (vollStats.w / vollStats.g) * 100;
+                if (wr > topVollarbeiter.wr || (wr === topVollarbeiter.wr && vollStats.g > (topVollarbeiter.g || 0))) topVollarbeiter = { n: name, wr, g: vollStats.g };
             }
-            if (data.Halb.g >= 3) { // Schwelle auf 3 Spiele gesetzt
-                const wr = (data.Halb.w / data.Halb.g) * 100;
-                if (wr > topHalbeExperte.wr) topHalbeExperte = { n: name, wr };
+            if (halbStats.g >= 1) { // Schwelle auf 1 Spiel gesetzt (für Debugging)
+                const wr = (halbStats.w / halbStats.g) * 100;
+                if (wr > topHalbeExperte.wr || (wr === topHalbeExperte.wr && halbStats.g > (topHalbeExperte.g || 0))) topHalbeExperte = { n: name, wr, g: halbStats.g };
             }
         });
 
@@ -2075,14 +2019,6 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
             }
         }
 
-// Alias für Kompatibilität mit index.html
-window.processAllStatsChronologically = function(matches, players) {
-    // Nutzt die vorhandene computeEloRatings Logik für ELO und processData für Stats
-    const elo = window.computeEloRatings(matches);
-    const base = window.processData(matches);
-    return { pData: base.pData, matchDeltas: {}, aggregates: base.aggregates, blackWins: base.blackWins, breakWins: base.breakWins };
-};
-
         // --- ELO Rangliste + Erklärung (nur Gesamt) ---
         function renderEloRanking(pData, show) {
           const el = byId('eloRanking') || document.getElementById('eloRanking');
@@ -2339,11 +2275,8 @@ window.processAllStatsChronologically = function(matches, players) {
         setText('stat-service-thief', '0%');
         setText('stat-vampire', '-');
         setText('stat-session-record', '-');
-        setText('stat-angst', '-');
         setText('stat-streak', '-');
         setText('stat-mauer', '-');
-        setText('stat-head-to-head', '-');
-        setText('stat-duo-ranking', '-');
         setText('stat-ball-spez', '-');
 
         const eloEl = document.getElementById('eloRanking');
@@ -2378,14 +2311,6 @@ window.processAllStatsChronologically = function(matches, players) {
           canvas.width = w; canvas.height = h;
         }
     }
-};
-
-// Alias für Kompatibilität mit index.html - Global definiert, damit Speichern immer möglich ist
-window.processAllStatsChronologically = function(matches, players, todayStr) {
-    // Nutzt die vorhandene computeEloRatings Logik für ELO und processData für Stats
-    const elo = window.computeEloRatings(matches);
-    const base = window.processData(matches, todayStr);
-    return { pData: base.pData, matchDeltas: {}, aggregates: base.aggregates, blackWins: base.blackWins, breakWins: base.breakWins };
 };
 
 // Hilfsfunktion für lokale Berechnungen (Fallback, wenn Worker blockiert ist)
@@ -2594,9 +2519,12 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
             totalEloTransferredForMatch += Math.round(Math.abs(change));
         });
 
-        if (winnerStr && loserStr && totalEloTransferredForMatch > 0) {
-            const transferKey = `${winnerStr} -> ${loserStr}`;
-            aggregates.eloTransfers[transferKey] = (aggregates.eloTransfers[transferKey] || 0) + totalEloTransferredForMatch;
+        const avgMatchEloDelta = Math.round(totalEloTransferredForMatch / (winners.length || 1));
+        const winnerKey = [...winners].sort().join(" & ");
+        const loserKey = [...losers].sort().join(" & ");
+        if (winnerKey && loserKey && avgMatchEloDelta > 0) {
+            const transferKey = `${winnerKey} -> ${loserKey}`;
+            aggregates.eloTransfers[transferKey] = (aggregates.eloTransfers[transferKey] || 0) + avgMatchEloDelta;
         }
         matchDeltas[originalIndex] = { eloDelta: totalEloTransferredForMatch }; // Use the actual sum of ELO changes for matchDelta
 
