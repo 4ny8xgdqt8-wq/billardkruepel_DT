@@ -1176,7 +1176,12 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
     const currentStats = filterToday ? statsToday : stats;
     // Labels auf aktive Spieler filtern und sortieren
     const labels = Object.keys(res.pData)
-        .filter(p => configuredPlayers ? configuredPlayers.has(String(p).trim()) : true)
+        .filter(p => {
+            const isConfigured = configuredPlayers ? configuredPlayers.has(String(p).trim()) : true;
+            if (!isConfigured) return false;
+            if (filterToday) return (res.pData[p].todayGames || 0) > 0;
+            return true;
+        })
         .sort();
 
     const getAchHtml = (proc, isTodayTab, procBefore, dataAll) => {
@@ -2279,7 +2284,10 @@ window.renderBillardStats = function(stats, filterToday = false, onlyAchievement
         setText('stat-session-record', '-');
         setText('stat-streak', '-');
         setText('stat-mauer', '-');
-        setText('stat-ball-spez', '-');
+        const spezEl = document.getElementById('stat-ball-spez');
+        if (spezEl) spezEl.innerHTML = '-';
+        const h2hEl = document.getElementById('stat-head-to-head');
+        if (h2hEl) h2hEl.innerHTML = '<div style="font-size:10px; color:#8e8e93; text-align:center; padding:5px;">Noch keine 1:1-Duelle vorhanden</div>';
 
         const eloEl = document.getElementById('eloRanking');
         if (eloEl) eloEl.innerHTML = '';
@@ -2375,20 +2383,22 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
         const losers = (g.w == 1) ? p2A : p1A;
         const rest = parseInt(g.l || 0);
 
-        if (g.t && (g.t.includes("Schwarz") || g.t.includes("Gegner-Fehler"))) blackWins++;
-        if(breakerString && winners.includes(breakerString)) {
-            breakWinsCount++;
-        }
+        if (!todayStr || isTodayMatch) {
+            if (g.t && (g.t.includes("Schwarz") || g.t.includes("Gegner-Fehler"))) blackWins++;
+            if(breakerString && winners.includes(breakerString)) {
+                breakWinsCount++;
+            }
 
-        // H2H Update for fallback
-        winners.forEach(w => {
-            losers.forEach(l => {
-                if (!pData[w].headToHead[l]) pData[w].headToHead[l] = { w: 0, l: 0 };
-                if (!pData[l].headToHead[w]) pData[l].headToHead[w] = { w: 0, l: 0 };
-                pData[w].headToHead[l].w++;
-                pData[l].headToHead[w].l++;
+            // H2H Update for fallback
+            winners.forEach(w => {
+                losers.forEach(l => {
+                    if (!pData[w].headToHead[l]) pData[w].headToHead[l] = { w: 0, l: 0 };
+                    if (!pData[l].headToHead[w]) pData[l].headToHead[w] = { w: 0, l: 0 };
+                    pData[w].headToHead[l].w++;
+                    pData[l].headToHead[w].l++;
+                });
             });
-        });
+        }
 
         // Wer war vor dem Match die Nr. 1?
         let currentTopPlayer = null;
@@ -2506,10 +2516,12 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
             d.eloHistory.push(Math.round(eloRatings[p]));
             if(eloRatings[p] > d.maxElo) d.maxElo = Math.round(eloRatings[p]);
 
-            // Session gain logic
-            if (isoDate !== 'unknown') {
-                if (!aggregates.sessionEloGains[isoDate]) aggregates.sessionEloGains[isoDate] = {};
-                aggregates.sessionEloGains[isoDate][p] = (aggregates.sessionEloGains[isoDate][p] || 0) + change;
+            if (!todayStr || isTodayMatch) {
+                // Session gain logic
+                if (isoDate !== 'unknown') {
+                    if (!aggregates.sessionEloGains[isoDate]) aggregates.sessionEloGains[isoDate] = {};
+                    aggregates.sessionEloGains[isoDate][p] = (aggregates.sessionEloGains[isoDate][p] || 0) + change;
+                }
             }
         });
 
@@ -2524,50 +2536,52 @@ window.calculateStatsLocally = function(allMatches, players, todayStr = null) {
         const avgMatchEloDelta = Math.round(totalEloTransferredForMatch / (winners.length || 1));
         const winnerKey = [...winners].sort().join(" & ");
         const loserKey = [...losers].sort().join(" & ");
-        if (winnerKey && loserKey && avgMatchEloDelta > 0) {
+        if (winnerKey && loserKey && avgMatchEloDelta > 0 && (!todayStr || isTodayMatch)) {
             const transferKey = `${winnerKey} -> ${loserKey}`;
             aggregates.eloTransfers[transferKey] = (aggregates.eloTransfers[transferKey] || 0) + avgMatchEloDelta;
         }
         matchDeltas[originalIndex] = { eloDelta: avgMatchEloDelta }; // Konsistent mit Worker (ELO pro Spieler)
 
-        // Duo & Duell Logic für Aggregates (Hier außerhalb des Spieler-Loops, damit nicht mehrfach gezählt wird!)
-        if (isTeam && p1A.length === 2 && p2A.length === 2) {
-            const t1 = [...p1A].sort().join(" & "), t2 = [...p2A].sort().join(" & ");
-            if(!aggregates.teamResults[t1]) aggregates.teamResults[t1] = {w:0, g:0};
-            if(!aggregates.teamResults[t2]) aggregates.teamResults[t2] = {w:0, g:0};
-            aggregates.teamResults[t1].g++; aggregates.teamResults[t2].g++;
-            if(g.w == 1) aggregates.teamResults[t1].w++; else aggregates.teamResults[t2].w++;
-        }
+        if (!todayStr || isTodayMatch) {
+            // Duo & Duell Logic für Aggregates (Hier außerhalb des Spieler-Loops, damit nicht mehrfach gezählt wird!)
+            if (isTeam && p1A.length === 2 && p2A.length === 2) {
+                const t1 = [...p1A].sort().join(" & "), t2 = [...p2A].sort().join(" & ");
+                if(!aggregates.teamResults[t1]) aggregates.teamResults[t1] = {w:0, g:0};
+                if(!aggregates.teamResults[t2]) aggregates.teamResults[t2] = {w:0, g:0};
+                aggregates.teamResults[t1].g++; aggregates.teamResults[t2].g++;
+                if(g.w == 1) aggregates.teamResults[t1].w++; else aggregates.teamResults[t2].w++;
+            }
 
-        if (!isTeam && p1A.length === 1 && p2A.length === 1) {
-            const name1 = p1A[0], name2 = p2A[0];
-            const winName = (g.w == 1) ? name1 : name2;
-            const loseName = (g.w == 1) ? name2 : name1;
-            const mKey = winName + " -> " + loseName;
-            const uKey = [name1, name2].sort().join('|');
-            
-            aggregates.matchups[mKey] = (aggregates.matchups[mKey] || 0) + 1;
-            aggregates.meetings[uKey] = (aggregates.meetings[uKey] || 0) + 1;
-            
-            if(!aggregates.matchupStats[uKey]) aggregates.matchupStats[uKey] = {p1: name1, p2: name2, p1_wins:0, p2_wins:0, games:0};
-            aggregates.matchupStats[uKey].games++;
-            if(winName === aggregates.matchupStats[uKey].p1) aggregates.matchupStats[uKey].p1_wins++; else aggregates.matchupStats[uKey].p2_wins++;
-        }
+            if (!isTeam && p1A.length === 1 && p2A.length === 1) {
+                const name1 = p1A[0], name2 = p2A[0];
+                const winName = (g.w == 1) ? name1 : name2;
+                const loseName = (g.w == 1) ? name2 : name1;
+                const mKey = winName + " -> " + loseName;
+                const uKey = [name1, name2].sort().join('|');
+                
+                aggregates.matchups[mKey] = (aggregates.matchups[mKey] || 0) + 1;
+                aggregates.meetings[uKey] = (aggregates.meetings[uKey] || 0) + 1;
+                
+                if(!aggregates.matchupStats[uKey]) aggregates.matchupStats[uKey] = {p1: name1, p2: name2, p1_wins:0, p2_wins:0, games:0};
+                aggregates.matchupStats[uKey].games++;
+                if(winName === aggregates.matchupStats[uKey].p1) aggregates.matchupStats[uKey].p1_wins++; else aggregates.matchupStats[uKey].p2_wins++;
+            }
 
-        // Aggregates (Spezis etc.)
-        if (g.bt1 && g.bt2) {
-            aggregates.totalBallMatches++;
-            const winType = (g.w == 1) ? g.bt1 : g.bt2;
-            if (winType === 'Voll') aggregates.vollWins++; else if (winType === 'Halb') aggregates.halbWins++;
-            winners.forEach(n => {
-                if(!aggregates.playerBallWins[n]) aggregates.playerBallWins[n] = { Voll:0, Halb:0 };
-                aggregates.playerBallWins[n][winType]++;
-            });
-            const procSpez = (arr, type, isWin) => arr.forEach(p => {
-                if(!aggregates.ballSpez[p]) aggregates.ballSpez[p] = { Voll:{w:0,g:0}, Halb:{w:0,g:0} };
-                aggregates.ballSpez[p][type].g++; if(isWin) aggregates.ballSpez[p][type].w++;
-            });
-            procSpez(p1A, g.bt1, g.w==1); procSpez(p2A, g.bt2, g.w==2);
+            // Aggregates (Spezis etc.)
+            if (g.bt1 && g.bt2) {
+                aggregates.totalBallMatches++;
+                const winType = (g.w == 1) ? g.bt1 : g.bt2;
+                if (winType === 'Voll') aggregates.vollWins++; else if (winType === 'Halb') aggregates.halbWins++;
+                winners.forEach(n => {
+                    if(!aggregates.playerBallWins[n]) aggregates.playerBallWins[n] = { Voll:0, Halb:0 };
+                    aggregates.playerBallWins[n][winType]++;
+                });
+                const procSpez = (arr, type, isWin) => arr.forEach(p => {
+                    if(!aggregates.ballSpez[p]) aggregates.ballSpez[p] = { Voll:{w:0,g:0}, Halb:{w:0,g:0} };
+                    aggregates.ballSpez[p][type].g++; if(isWin) aggregates.ballSpez[p][type].w++;
+                });
+                procSpez(p1A, g.bt1, g.w==1); procSpez(p2A, g.bt2, g.w==2);
+            }
         }
     });
 
